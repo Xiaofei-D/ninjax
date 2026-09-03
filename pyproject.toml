@@ -77,6 +77,13 @@ dev = [
   "nbconvert>=7.0",
 ]
 
+# The jax CUDA plugins ship manylinux x86_64/aarch64 wheels only, so the marker
+# keeps these extras resolvable (and inert) on macOS and Windows. They work only
+# because `jax` is absent from `[tool.uv] override-dependencies`: an override
+# replaces a requirement by name and silently drops its extras.
+cuda12 = ["jax[cuda12]; sys_platform == 'linux'"]
+cuda13 = ["jax[cuda13]; sys_platform == 'linux'"]
+
 [dependency-groups]
 dev = ["nbqa>=1.9.1", "ruff>=0.15.0"]
 
@@ -98,6 +105,7 @@ override-dependencies = [
     "flowmc>=0.6.1",   # jim needs >=0.6.1; jester pins ==0.4.5
     "optax>=0.2.7",    # required transitively by flowmc>=0.6.1; jester caps <0.2.7
 ]
+conflicts = [[{ extra = "cuda12" }, { extra = "cuda13" }]]
 
 [tool.ruff]
 extend-exclude = ["examples/"]
