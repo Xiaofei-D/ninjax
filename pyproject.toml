@@ -81,9 +81,11 @@ dev = [
 dev = ["nbqa>=1.9.1", "ruff>=0.15.0"]
 
 # jesterTOV on PyPI is still 0.1.1, which ships the older flat `eos.py`/`tov.py`
-# layout. ninjax targets the restructured `eos/`, `tov/` packages, so track main.
+# layout; ninjax targets the restructured `eos/`, `tov/` packages. The
+# `ninjax-version` branch is upstream main plus the removal of jester's
+# `jax<0.8.0` cap, which is incompatible with the jax version jim requires.
 [tool.uv.sources]
-jesterTOV = { git = "https://github.com/nuclear-multimessenger-astronomy/jester.git", branch = "main" }
+jesterTOV = { git = "https://github.com/tsunhopang/jester.git", branch = "ninjax-version" }
 
 # jim owns the sampler, so its pins win wherever jester disagrees. jester's own
 # bounds exist to support its `jesterTOV.inference` stack, which ninjax does not
@@ -92,8 +94,6 @@ jesterTOV = { git = "https://github.com/nuclear-multimessenger-astronomy/jester.
 # the EOS/TOV physics path and jester's likelihood base classes are unaffected.
 [tool.uv]
 override-dependencies = [
-    "jax>=0.8.2",      # jim needs >=0.8.2; jester caps <0.8.0
-    "jaxlib>=0.8.2",
     "blackjax>=1.6",   # jim needs PyPI >=1.6; jester requests a git fork
     "flowmc>=0.6.1",   # jim needs >=0.6.1; jester pins ==0.4.5
     "optax>=0.2.7",    # required transitively by flowmc>=0.6.1; jester caps <0.2.7
