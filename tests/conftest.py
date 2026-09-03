@@ -1,11 +1,8 @@
 """Test configuration for ninjax test suite."""
 
+import jax
 
-# Add shared fixtures here. For example:
-#
-# import pytest
-#
-# @pytest.fixture
-# def sample_data():
-#     """Provide sample data for tests."""
-#     return {"key": "value"}
+
+# jimgw.core.single_event.time_utils raises at import time when x64 is off, and
+# ninjax.generation imports it, so this has to run before any ninjax import.
+jax.config.update("jax_enable_x64", True)
