@@ -94,6 +94,12 @@ Contents
 
 .. toctree::
    :maxdepth: 2
+   :caption: Examples
+
+   examples/getting_started
+
+.. toctree::
+   :maxdepth: 2
    :caption: API reference
 
    api/ninjax

@@ -1,6 +1,8 @@
 # Contributing
 
-For full contributing guidelines, see [`CONTRIBUTING.md`](../../CONTRIBUTING.md) at the repository root.
+For full contributing guidelines, see
+[`CONTRIBUTING.md`](https://github.com/nuclear-multimessenger-astronomy/ninjax/blob/main/CONTRIBUTING.md)
+at the repository root.
 
 ## Quick Reference
 
