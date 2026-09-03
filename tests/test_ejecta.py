@@ -1,11 +1,17 @@
 """Tests for the BNS ejecta fitting formulas."""
 
+import jax
+
 import ninjax
 from ninjax.generation.ejecta import GEOM_MSUN_KM, dynamic_mass_KrFo, log10_disk_mass
 
 
 def test_version_is_a_string():
     assert isinstance(ninjax.__version__, str)
+
+
+def test_importing_ninjax_enables_float64():
+    assert jax.config.jax_enable_x64
 
 
 def test_dynamic_mass_is_symmetric_under_swapping_the_two_stars():

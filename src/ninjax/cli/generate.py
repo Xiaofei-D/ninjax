@@ -302,11 +302,7 @@ def main() -> None:
             )
         )
 
-    # jimgw raises at import time when float64 is off, so this has to come first.
     import jax
-
-    jax.config.update("jax_enable_x64", True)
-
     import jax.numpy as jnp
 
     from ninjax.generation import generate_signals
