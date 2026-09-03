@@ -39,7 +39,7 @@ docs/
 
 - **HTML Theme**: `sphinx_book_theme`
 - **Custom CSS**: `_static/style.css`
-- **Logo**: `_static/logo_light.svg` (light mode), `_static/logo_dark.svg` (dark mode)
+- **Logo**: `_static/logo.png`, the same file the README uses, in both light and dark mode
 - **Favicon**: `_static/icon.svg`
 
 ## Math in Docstrings
