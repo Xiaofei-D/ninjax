@@ -46,17 +46,25 @@ def _detector_instances(names: Sequence[str]) -> list[GroundBased2G]:
 
 
 class _CompiledWaveform:
-    """JIT-compiled waveform reused across events with the same f_ref."""
+    """JIT-compiled scalar and batched waveform evaluation, 
+    reused across events with the same ``f_ref``."""
 
     def __init__(self, f_ref: float) -> None:
         self.model = RippleIMRPhenomD_NRTidalv2(f_ref=f_ref)
         self._call = jax.jit(self.model.__call__)
+        # The grid is shared by every event, so only the parameters are mapped.
+        self._batched = jax.jit(jax.vmap(self.model.__call__, in_axes=(None, 0)))
 
     def __call__(
         self, frequencies: Array, params: Mapping[str, Any]
     ) -> dict[str, Array]:
         return self._call(frequencies, dict(params))
 
+    def batched(
+        self, frequencies: Array, params: Mapping[str, Any]
+    ) -> dict[str, Array]:
+        """Evaluate one shared grid against a batch of parameter sets."""
+        return self._batched(frequencies, dict(params))
 
 @cache
 def _waveform(f_ref: float) -> _CompiledWaveform:
@@ -89,8 +97,22 @@ def gw_polarizations(
     *,
     f_ref: float = 20.0,
 ) -> dict[str, Array]:
-    """Plus and cross polarizations on a frequency grid, keyed ``"p"`` and ``"c"``."""
+    """Plus and cross polarizations on a frequency grid for one binary, keyed ``"p"`` and ``"c"``."""
     return _waveform(f_ref)(frequencies, params)
+
+
+def gw_polarizations_batch(
+    params: Mapping[str, Any],
+    frequencies: Array,
+    *,
+    f_ref: float = 20.0,
+) -> dict[str, Array]:
+    """Generate GW polarizations for a batch of binaries on a shared frequency grid.
+
+    Parameter leaves have shape ``(n_events,)`` and outputs have shape
+    ``(n_events, n_frequencies)``.
+    """
+    return _waveform(f_ref).batched(frequencies, params)
 
 
 def gw_strain(

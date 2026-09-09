@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -24,7 +24,7 @@ from jimgw.core.single_event.transform_utils import Mc_eta_to_m1_m2, Mc_q_to_m1_
 from ninjax.generation.ejecta import binary_to_ejecta
 from ninjax.generation.em import em_lightcurve_batch
 from ninjax.generation.eos import EOSLike, resolve_family
-from ninjax.generation.gw import gw_polarizations, gw_strain, to_jim_params
+from ninjax.generation.gw import gw_polarizations_batch, gw_strain, to_jim_params
 
 
 # astropy exports its realizations lazily, so Planck18 carries no usable static type
@@ -122,15 +122,12 @@ def _generate_one(
     *,
     family: FamilyData,
     gw_mode: Literal["polarizations", "strain", "none"],
-    frequencies: Array | None,
     gw_opts: Mapping[str, Any],
     alpha: float,
     ratio_zeta: float,
 ) -> dict[str, Any]:
-    """Prepare parameters and generate the per-event GW signal.
-
-    ``event_key`` is the event-level RNG key derived from its global population index.
-    EM generation is added later at the batch level. 
+    """Prepare one event and generate its GW strain when requested.
+    Batched GW polarizations EM generation is added later at the batch level. 
     """
     params: dict[str, Any] = dict(row)
     redshift = _redshift(params)
@@ -140,32 +137,33 @@ def _generate_one(
     )
     params["mass_1_source"] = params["mass_1"] / (1 + redshift)
     params["mass_2_source"] = params["mass_2"] / (1 + redshift)
-    params.update(
-        binary_to_ejecta(
+    params.update(binary_to_ejecta(
             params["mass_1_source"],
             params["mass_2_source"],
             family,
             alpha=params.get("alpha", alpha),
-            ratio_zeta=params.get("ratio_zeta", ratio_zeta),
-        )
-    )
+            ratio_zeta=params.get("ratio_zeta", ratio_zeta)))
+
     trigger_time = float(gw_opts.get("trigger_time", params["geocent_time"]))
     params["t_c"] = float(params["geocent_time"]) - trigger_time
     record: dict[str, Any] = {"parameters": params}
-    if gw_mode != "none":
-        jim_params = to_jim_params(params)
-        if gw_mode == "polarizations":
-            if frequencies is None:
-                raise ValueError("gw_mode='polarizations' needs frequencies")
-            record["gw"] = gw_polarizations(jim_params, frequencies)
-        else:
-            record["gw"] = gw_strain(
-                jim_params,
-                rng_key=event_key,
-                **{**gw_opts, "trigger_time": trigger_time},
-            )
+    if gw_mode == "strain":
+        record["gw"] = gw_strain(
+            to_jim_params(params),
+            rng_key=event_key,
+            **{**gw_opts, "trigger_time": trigger_time},
+        )
 
     return record
+
+
+def _stack_params(params: Sequence[Mapping[str, Any]]) -> dict[str, Array]:
+    """Turn one mapping per event into columns of shape ``(n_events,)``."""
+    return {
+        name: jnp.stack([jnp.asarray(event[name]) for event in params])
+        for name in params[0]
+    }
+
 
 def generate_signals(
     source: pd.DataFrame | Prior,
@@ -216,13 +214,23 @@ def generate_signals(
                 event_key,
                 family=family,
                 gw_mode=gw_mode,
-                frequencies=frequencies,
                 gw_opts=gw_opts,
                 alpha=alpha,
                 ratio_zeta=ratio_zeta,
             )
             for row, event_key in zip(chunk, event_keys, strict=True)
         ]
+
+        # One vectorised waveform call for the whole batch.
+        if gw_mode == "polarizations":
+            if frequencies is None:
+                raise ValueError("gw_mode='polarizations' needs frequencies")
+            polarizations = gw_polarizations_batch(
+                _stack_params([to_jim_params(record["parameters"]) for record in batch]),
+                frequencies,
+            )
+            for index, record in enumerate(batch):
+                record["gw"] = {name: value[index] for name, value in polarizations.items()}
 
         # One surrogate call for the whole batch, then per-event scatter.
         if em_model is not None:
@@ -239,9 +247,7 @@ def generate_signals(
 
         for offset, record in enumerate(batch):
             if outdir is not None:
-                _write_record(
-                    Path(outdir), start + offset, record, record["parameters"]
-                )
+                _write_record(Path(outdir), start + offset, record, record["parameters"])
             records.append(record)
 
     return records
