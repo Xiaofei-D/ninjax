@@ -22,7 +22,7 @@ from jimgw.core.prior import Prior
 from jimgw.core.single_event.transform_utils import Mc_eta_to_m1_m2, Mc_q_to_m1_m2
 
 from ninjax.generation.ejecta import binary_to_ejecta
-from ninjax.generation.em import em_lightcurve
+from ninjax.generation.em import em_lightcurve_batch
 from ninjax.generation.eos import EOSLike, resolve_family
 from ninjax.generation.gw import gw_polarizations, gw_strain, to_jim_params
 
@@ -118,26 +118,21 @@ def _write_record(
 
 def _generate_one(
     row: Mapping[str, Any],
-    index: int,
+    event_key: Key,
     *,
     family: FamilyData,
-    base_key: Key,
     gw_mode: Literal["polarizations", "strain", "none"],
     frequencies: Array | None,
     gw_opts: Mapping[str, Any],
-    em_model: Any,
-    error_budget: float | None,
-    detection_limit: float | None,
     alpha: float,
     ratio_zeta: float,
 ) -> dict[str, Any]:
-    """Generate GW and EM signals for a single binary, keyed by its position in the population.
+    """Prepare parameters and generate the per-event GW signal.
 
-    ``index`` is the global event index, so an event's random realisation does not depend on 
-    how the population is split.
+    ``event_key`` is the event-level RNG key derived from its global population index.
+    EM generation is added later at the batch level. 
     """
     params: dict[str, Any] = dict(row)
-    key = jax.random.fold_in(base_key, index)
     redshift = _redshift(params)
     params["redshift"] = redshift
     params.setdefault(
@@ -166,17 +161,10 @@ def _generate_one(
         else:
             record["gw"] = gw_strain(
                 jim_params,
-                rng_key=key,
+                rng_key=event_key,
                 **{**gw_opts, "trigger_time": trigger_time},
             )
-    if em_model is not None:
-        record["em"] = em_lightcurve(
-            params,
-            em_model,
-            error_budget=error_budget,
-            detection_limit=detection_limit,
-            rng_key=key,
-        )
+
     return record
 
 def generate_signals(
@@ -220,23 +208,34 @@ def generate_signals(
 
     records = []
     for start in range(0, len(rows), batch_size):
+        chunk = rows[start : start + batch_size]
+        event_keys = [jax.random.fold_in(base_key, start + offset) for offset in range(len(chunk))]
         batch = [
             _generate_one(
                 row,
-                start + offset,
+                event_key,
                 family=family,
-                base_key=base_key,
                 gw_mode=gw_mode,
                 frequencies=frequencies,
                 gw_opts=gw_opts,
-                em_model=em_model,
-                error_budget=error_budget,
-                detection_limit=detection_limit,
                 alpha=alpha,
                 ratio_zeta=ratio_zeta,
             )
-            for offset, row in enumerate(rows[start : start + batch_size])
+            for row, event_key in zip(chunk, event_keys, strict=True)
         ]
+
+        # One surrogate call for the whole batch, then per-event scatter.
+        if em_model is not None:
+            lightcurves = em_lightcurve_batch(
+                [record["parameters"] for record in batch],
+                em_model,
+                error_budget=error_budget,
+                detection_limit=detection_limit,
+                rng_key=event_keys,
+            )
+            for record, lightcurve in zip(batch, lightcurves, strict=True):
+                record["em"] = lightcurve
+
 
         for offset, record in enumerate(batch):
             if outdir is not None:
