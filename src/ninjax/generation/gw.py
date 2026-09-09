@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from functools import cache
 from typing import Any
 
+import jax
 from jax import Array
 from jaxtyping import Key
+from jimgw.core.single_event.data import PowerSpectrum
 from jimgw.core.single_event.detector import GroundBased2G, get_detector_preset
 from jimgw.core.single_event.transform_utils import m1_m2_to_Mc_eta
 from jimgw.core.single_event.waveform import RippleIMRPhenomD_NRTidalv2
@@ -42,6 +45,44 @@ def _detector_instances(names: Sequence[str]) -> list[GroundBased2G]:
     return instances
 
 
+class _CompiledWaveform:
+    """JIT-compiled waveform reused across events with the same f_ref."""
+
+    def __init__(self, f_ref: float) -> None:
+        self.model = RippleIMRPhenomD_NRTidalv2(f_ref=f_ref)
+        self._call = jax.jit(self.model.__call__)
+
+    def __call__(
+        self, frequencies: Array, params: Mapping[str, Any]
+    ) -> dict[str, Array]:
+        return self._call(frequencies, dict(params))
+
+
+@cache
+def _waveform(f_ref: float) -> _CompiledWaveform:
+    """Return a cached compiled waveform for a reference frequency."""
+    return _CompiledWaveform(f_ref)
+
+
+@cache
+def _detectors_with_psd(
+    names: tuple[str, ...],
+    psd_items: tuple[tuple[str, str], ...],
+    asd_items: tuple[tuple[str, str], ...],
+) -> tuple[tuple[GroundBased2G, ...], tuple[PowerSpectrum, ...]]:
+    """Cache detector instances and their original PSDs for a configuration."""
+    # Cached detectors are mutable; callers must reset them before reuse.
+    psd_files, asd_files = dict(psd_items), dict(asd_items)
+    instances = tuple(_detector_instances(names))
+    psds = tuple(
+        ifo.load_and_set_psd(
+            psd_file=psd_files.get(ifo.name, ""),
+            asd_file=asd_files.get(ifo.name, ""),
+        )
+        for ifo in instances
+    )
+    return instances, psds
+
 def gw_polarizations(
     params: Mapping[str, Any],
     frequencies: Array,
@@ -49,8 +90,7 @@ def gw_polarizations(
     f_ref: float = 20.0,
 ) -> dict[str, Array]:
     """Plus and cross polarizations on a frequency grid, keyed ``"p"`` and ``"c"``."""
-    waveform = RippleIMRPhenomD_NRTidalv2(f_ref=f_ref)
-    return waveform(frequencies, params)
+    return _waveform(f_ref)(frequencies, params)
 
 
 def gw_strain(
@@ -73,15 +113,22 @@ def gw_strain(
     Without ``psd_files`` or ``asd_files`` jim downloads the GWTC-2 ASD, which
     needs network access and only covers H1, L1 and V1. Results are keyed by
     detector name, so ``"ET"`` expands to its three components.
+
+    Detector and PSD setup is cached and reused across calls.
     """
-    waveform = RippleIMRPhenomD_NRTidalv2(f_ref=f_ref)
+    waveform = _waveform(f_ref)
+    instances, psds = _detectors_with_psd(
+        tuple(detectors),
+        tuple(sorted((psd_files or {}).items())),
+        tuple(sorted((asd_files or {}).items())),
+    )
 
     signals = {}
-    for ifo in _detector_instances(detectors):
-        ifo.load_and_set_psd(
-            psd_file=(psd_files or {}).get(ifo.name, ""),
-            asd_file=(asd_files or {}).get(ifo.name, ""),
-        )
+    for ifo, psd in zip(instances, psds, strict=True):
+        # Detectors are mutable, so restore a clean state and the original PSD
+        # before each injection.
+        ifo.clear_data_and_psd()
+        ifo.set_psd(psd)
         ifo.inject_signal(
             duration=duration,
             sampling_frequency=sampling_frequency,
