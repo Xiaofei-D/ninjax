@@ -17,6 +17,7 @@ from astropy.time import Time
 from fiesta.utils import write_event_data
 from jax import Array
 from jaxtyping import Key
+from jesterTOV.tov.data_classes import FamilyData
 from jimgw.core.prior import Prior
 from jimgw.core.single_event.transform_utils import Mc_eta_to_m1_m2, Mc_q_to_m1_m2
 
@@ -115,6 +116,68 @@ def _write_record(
     if record.get("gw"):
         np.savez(outdir / f"{index}_gw.npz", **_flatten(record["gw"]))
 
+def _generate_one(
+    row: Mapping[str, Any],
+    index: int,
+    *,
+    family: FamilyData,
+    base_key: Key,
+    gw_mode: Literal["polarizations", "strain", "none"],
+    frequencies: Array | None,
+    gw_opts: Mapping[str, Any],
+    em_model: Any,
+    error_budget: float | None,
+    detection_limit: float | None,
+    alpha: float,
+    ratio_zeta: float,
+) -> dict[str, Any]:
+    """Generate GW and EM signals for a single binary, keyed by its position in the population.
+
+    ``index`` is the global event index, so an event's random realisation does not depend on 
+    how the population is split.
+    """
+    params: dict[str, Any] = dict(row)
+    key = jax.random.fold_in(base_key, index)
+    redshift = _redshift(params)
+    params["redshift"] = redshift
+    params.setdefault(
+        "inclination_EM", min(params["theta_jn"], np.pi - params["theta_jn"])
+    )
+    params["mass_1_source"] = params["mass_1"] / (1 + redshift)
+    params["mass_2_source"] = params["mass_2"] / (1 + redshift)
+    params.update(
+        binary_to_ejecta(
+            params["mass_1_source"],
+            params["mass_2_source"],
+            family,
+            alpha=params.get("alpha", alpha),
+            ratio_zeta=params.get("ratio_zeta", ratio_zeta),
+        )
+    )
+    trigger_time = float(gw_opts.get("trigger_time", params["geocent_time"]))
+    params["t_c"] = float(params["geocent_time"]) - trigger_time
+    record: dict[str, Any] = {"parameters": params}
+    if gw_mode != "none":
+        jim_params = to_jim_params(params)
+        if gw_mode == "polarizations":
+            if frequencies is None:
+                raise ValueError("gw_mode='polarizations' needs frequencies")
+            record["gw"] = gw_polarizations(jim_params, frequencies)
+        else:
+            record["gw"] = gw_strain(
+                jim_params,
+                rng_key=key,
+                **{**gw_opts, "trigger_time": trigger_time},
+            )
+    if em_model is not None:
+        record["em"] = em_lightcurve(
+            params,
+            em_model,
+            error_budget=error_budget,
+            detection_limit=detection_limit,
+            rng_key=key,
+        )
+    return record
 
 def generate_signals(
     source: pd.DataFrame | Prior,
@@ -130,6 +193,7 @@ def generate_signals(
     detection_limit: float | None = None,
     alpha: float = 0.0,
     ratio_zeta: float = 0.15,
+    batch_size: int | None = None,
     outdir: str | os.PathLike[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Generate GW and EM signals for every binary in ``source``.
@@ -138,62 +202,47 @@ def generate_signals(
     ``eos`` is a macroscopic table path, a dict of jester parameters, or a
     ready-made family. ``gw_kwargs`` is forwarded to :func:`gw_strain`, which
     needs at least ``duration`` and ``sampling_frequency``.
+
+    ``batch_size`` splits the population into chunks that are generated and then
+    written out one chunk at a time. The default processes the whole population 
+    as a single batch.
     """
     table = _to_table(source, n_samples, rng_key)
     family = resolve_family(eos)
     gw_opts = dict(gw_kwargs or {})
     base_key = jax.random.key(0) if rng_key is None else rng_key
 
+    rows = table.to_dict(orient="records")
+    if batch_size is None:
+        batch_size = max(len(rows), 1)
+    elif batch_size < 1:
+        raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+
     records = []
-    for index, row in enumerate(table.to_dict(orient="records")):
-        params: dict[str, Any] = dict(row)
-        key = jax.random.fold_in(base_key, index)
-
-        redshift = _redshift(params)
-        params["redshift"] = redshift
-        params.setdefault(
-            "inclination_EM", min(params["theta_jn"], np.pi - params["theta_jn"])
-        )
-        params["mass_1_source"] = params["mass_1"] / (1 + redshift)
-        params["mass_2_source"] = params["mass_2"] / (1 + redshift)
-        params.update(
-            binary_to_ejecta(
-                params["mass_1_source"],
-                params["mass_2_source"],
-                family,
-                alpha=params.get("alpha", alpha),
-                ratio_zeta=params.get("ratio_zeta", ratio_zeta),
-            )
-        )
-
-        trigger_time = float(gw_opts.get("trigger_time", params["geocent_time"]))
-        params["t_c"] = float(params["geocent_time"]) - trigger_time
-
-        record: dict[str, Any] = {"parameters": params}
-        if gw_mode != "none":
-            jim_params = to_jim_params(params)
-            if gw_mode == "polarizations":
-                if frequencies is None:
-                    raise ValueError("gw_mode='polarizations' needs frequencies")
-                record["gw"] = gw_polarizations(jim_params, frequencies)
-            else:
-                record["gw"] = gw_strain(
-                    jim_params,
-                    rng_key=key,
-                    **{**gw_opts, "trigger_time": trigger_time},
-                )
-
-        if em_model is not None:
-            record["em"] = em_lightcurve(
-                params,
-                em_model,
+    for start in range(0, len(rows), batch_size):
+        batch = [
+            _generate_one(
+                row,
+                start + offset,
+                family=family,
+                base_key=base_key,
+                gw_mode=gw_mode,
+                frequencies=frequencies,
+                gw_opts=gw_opts,
+                em_model=em_model,
                 error_budget=error_budget,
                 detection_limit=detection_limit,
-                rng_key=key,
+                alpha=alpha,
+                ratio_zeta=ratio_zeta,
             )
+            for offset, row in enumerate(rows[start : start + batch_size])
+        ]
 
-        if outdir is not None:
-            _write_record(Path(outdir), index, record, params)
-        records.append(record)
+        for offset, record in enumerate(batch):
+            if outdir is not None:
+                _write_record(
+                    Path(outdir), start + offset, record, record["parameters"]
+                )
+            records.append(record)
 
     return records

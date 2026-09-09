@@ -164,6 +164,11 @@ class GenerateConfig(BaseConfig):
         default=0.15,
         description="Fraction of the remnant disk that becomes wind ejecta.",
     )
+    batch_size: int | None = Field(
+        default=None,
+        description="Number of binaries to generate before writing them out and "
+        "moving on. Default to process the whole population in one batch.",
+    )
     gw: GWConfig = Field(
         default_factory=lambda: GWConfig(), description="Gravitational-wave output."
     )
@@ -175,6 +180,8 @@ class GenerateConfig(BaseConfig):
     def _check_inputs(self) -> GenerateConfig:
         if (self.params_file is None) == (self.prior_file is None):
             raise ValueError("set exactly one of --params-file or --prior-file")
+        if self.batch_size is not None and self.batch_size < 1:
+            raise ValueError(f"batch-size must be at least 1, got {self.batch_size}")
         for path in (self.eos, self.params_file, self.prior_file, self.fixed_params):
             if path is not None and not path.exists():
                 raise ValueError(f"file not found: {path}")
@@ -332,6 +339,7 @@ def main() -> None:
         detection_limit=config.em.detection_limit,
         alpha=config.alpha,
         ratio_zeta=config.ratio_zeta,
+        batch_size=config.batch_size,
         outdir=config.outdir,
     )
 
