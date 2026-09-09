@@ -10,7 +10,7 @@ from ninjax.generation import generate_signals
 
 N_EVENTS = 5
 FREQUENCIES = jnp.arange(20.0, 40.0, 1.0)
-
+STRAIN_RTOL = 1e-10
 
 @pytest.fixture
 def eos_file(tmp_path):
@@ -63,8 +63,11 @@ def test_batch_size_preserves_generated_signals(table, eos_file):
 
     for one, other in zip(whole, batched, strict=True):
         for polarization in ("p", "c"):
-            np.testing.assert_array_equal(other["gw"][polarization],one["gw"][polarization])
-
+            np.testing.assert_allclose(
+                other["gw"][polarization],
+                one["gw"][polarization],
+                rtol=STRAIN_RTOL,
+                atol=0.0)
 
 def test_batch_size_preserves_noise_realisation(table, eos_file, tmp_path):
     """An event's RNG must depend on its global index, not batch position."""

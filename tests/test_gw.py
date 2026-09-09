@@ -6,6 +6,7 @@ from jax import numpy as jnp, random
 from jimgw.core.single_event.waveform import RippleIMRPhenomD_NRTidalv2
 
 from ninjax.generation import gw_polarizations, gw_strain
+from ninjax.generation.gw import gw_polarizations_batch
 
 
 F_REF = 20.0
@@ -36,6 +37,35 @@ def test_compiled_waveform_matches_eager():
     for polarization in eager:
         np.testing.assert_allclose(compiled[polarization], eager[polarization], rtol=1e-10, atol=0.0)
 
+def test_batched_polarizations_match_scalar_calls():
+    events = 3
+    varied = {
+        "M_c": [1.18, 1.1976, 1.21],
+        "d_L": [100.0, 150.0, 200.0],
+        "iota": [0.2, 0.4, 0.6],
+        "lambda_1": [380.0, 400.0, 420.0],
+    }
+    batch = {name: jnp.array(varied.get(name, [value] * events))
+        for name, value in PARAMS.items()}
+
+    batched = gw_polarizations_batch(batch, FREQUENCIES, f_ref=F_REF)
+
+    for polarization in ("p", "c"):
+        assert batched[polarization].shape == (events, FREQUENCIES.size)
+
+    for index in range(events):
+        scalar = gw_polarizations(
+            {name: value[index] for name, value in batch.items()},
+            FREQUENCIES,
+            f_ref=F_REF,
+        )
+        for polarization in scalar:
+            np.testing.assert_allclose(
+                batched[polarization][index],
+                scalar[polarization],
+                rtol=1e-10,
+                atol=0.0,
+            )
 
 @pytest.fixture
 def asd_file(tmp_path):
