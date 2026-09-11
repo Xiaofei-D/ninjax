@@ -33,6 +33,7 @@ dependencies = [
   "fiestaEM>=0.2.1", # EM: kilonova and afterglow surrogate light curves
   "jesterTOV",       # EOS: metamodel/CSE equations of state and TOV solver
   "astropy",         # cosmology and time conversions in signal generation
+  "h5py",            # streaming HDF5 output of generated signals
   "pandas",          # parameter tables in signal generation
   "tyro",            # command-line parsing for the generation entry point
 ]

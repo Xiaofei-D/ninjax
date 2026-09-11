@@ -15,7 +15,11 @@ from ninjax.generation.eos import (
     resolve_family,
     tov_mass,
 )
-from ninjax.generation.generate import generate_signals, sample_parameters
+from ninjax.generation.generate import (
+    generate_signals,
+    generate_signals_hdf5,
+    sample_parameters,
+)
 from ninjax.generation.gw import gw_polarizations, gw_strain, to_jim_params
 
 
@@ -27,6 +31,7 @@ __all__ = [
     "family_from_nep",
     "family_from_table",
     "generate_signals",
+    "generate_signals_hdf5",
     "gw_polarizations",
     "gw_strain",
     "lambda_of_mass",

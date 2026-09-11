@@ -169,6 +169,11 @@ class GenerateConfig(BaseConfig):
         description="Number of binaries to generate before writing them out and "
         "moving on. Default to process the whole population in one batch.",
     )
+    output_format: Literal["files", "hdf5"] = Field(
+        default="files",
+        description="files: parameters.csv plus one .npz/.dat per binary. "
+        "hdf5: a single signals.h5 with generated signals written batch by batch.",
+    )
     gw: GWConfig = Field(
         default_factory=lambda: GWConfig(), description="Gravitational-wave output."
     )
@@ -312,7 +317,7 @@ def main() -> None:
     import jax
     import jax.numpy as jnp
 
-    from ninjax.generation import generate_signals
+    from ninjax.generation import generate_signals, generate_signals_hdf5
 
     table = build_table(config)
 
@@ -325,23 +330,32 @@ def main() -> None:
     if config.gw.mode == "polarizations":
         frequencies = jnp.arange(config.gw.f_min, config.gw.f_max, config.gw.delta_f)
 
-    eos = config.eos
-    config.outdir.mkdir(parents=True, exist_ok=True)
-    records = generate_signals(
-        table,
-        load_mapping(eos) if eos.suffix in (".json", ".toml") else eos,
-        rng_key=jax.random.key(config.seed),
-        gw_mode=config.gw.mode,
-        frequencies=frequencies,
-        gw_kwargs=gw_kwargs(config.gw),
-        em_model=em_model,
-        error_budget=config.em.error_budget,
-        detection_limit=config.em.detection_limit,
-        alpha=config.alpha,
-        ratio_zeta=config.ratio_zeta,
-        batch_size=config.batch_size,
-        outdir=config.outdir,
-    )
+    if config.output_format == "hdf5" and config.batch_size is None:
+        raise ValueError("batch_size must be specified for HDF5 output")
 
+    eos = config.eos
+    eos_spec = load_mapping(eos) if eos.suffix in (".json", ".toml") else eos
+    options: dict[str, Any] = {
+        "rng_key": jax.random.key(config.seed),
+        "gw_mode": config.gw.mode,
+        "frequencies": frequencies,
+        "gw_kwargs": gw_kwargs(config.gw),
+        "em_model": em_model,
+        "error_budget": config.em.error_budget,
+        "detection_limit": config.em.detection_limit,
+        "alpha": config.alpha,
+        "ratio_zeta": config.ratio_zeta,
+        "batch_size": config.batch_size,
+    }
+    config.outdir.mkdir(parents=True, exist_ok=True)
+
+    if config.output_format == "hdf5":
+        path = generate_signals_hdf5(
+            table, eos_spec, config.outdir / "signals.h5", **options
+        )
+        print(f"Wrote {len(table)} injection(s) to {path}")
+        return
+
+    records = generate_signals(table, eos_spec, outdir=config.outdir, **options)
     write_parameters(records, config.outdir)
     print(f"Wrote {len(records)} injection(s) to {config.outdir}")
