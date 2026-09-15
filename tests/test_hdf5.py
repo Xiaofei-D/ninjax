@@ -39,17 +39,28 @@ def test_hdf5_matches_generated_records(table, eos_file, tmp_path):
         np.testing.assert_array_equal(file["gw/frequencies"][()], FREQUENCIES)
 
         for index, record in enumerate(records):
-            np.testing.assert_allclose(file["parameters/mass_1"][index], record["parameters"]["mass_1"])
+            np.testing.assert_allclose(
+                file["parameters/mass_1"][index], record["parameters"]["mass_1"]
+            )
             for polarization in ("p", "c"):
-                np.testing.assert_allclose(file[f"gw/{polarization}"][index], record["gw"][polarization], rtol=GW_RTOL, atol=0.0)
+                np.testing.assert_allclose(
+                    file[f"gw/{polarization}"][index],
+                    record["gw"][polarization],
+                    rtol=GW_RTOL,
+                    atol=0.0,
+                )
 
 
 def test_writer_stores_em_output(tmp_path):
     path = tmp_path / "signals.h5"
-    batch = [{
-        "parameters": {"mass_1": 1.4},
-        "em": {"ztfg": {"time": np.array([0.5, 1.0]), "mag": np.array([20.0, 21.0])}},
-    }]
+    batch = [
+        {
+            "parameters": {"mass_1": 1.4},
+            "em": {
+                "ztfg": {"time": np.array([0.5, 1.0]), "mag": np.array([20.0, 21.0])}
+            },
+        }
+    ]
 
     with SignalWriter(path, 1) as writer:
         writer.write(0, batch)
@@ -83,18 +94,39 @@ def test_cli_output_format(table, eos_file, tmp_path, monkeypatch):
 
     base = [
         "ninjax-generate",
-        "--eos", str(eos_file),
-        "--params-file", str(params),
-        "--gw.f-min", "20",
-        "--gw.f-max", "40",
-        "--gw.delta-f", "1",
+        "--eos",
+        str(eos_file),
+        "--params-file",
+        str(params),
+        "--gw.f-min",
+        "20",
+        "--gw.f-max",
+        "40",
+        "--gw.delta-f",
+        "1",
     ]
 
-    monkeypatch.setattr(sys, "argv", [*base, "--outdir", str(tmp_path / "h5"), "--output-format", "hdf5", "--batch-size", "1"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            *base,
+            "--outdir",
+            str(tmp_path / "h5"),
+            "--output-format",
+            "hdf5",
+            "--batch-size",
+            "1",
+        ],
+    )
     main()
 
     monkeypatch.setattr(sys, "argv", [*base, "--outdir", str(tmp_path / "files")])
     main()
 
     assert sorted(p.name for p in (tmp_path / "h5").iterdir()) == ["signals.h5"]
-    assert sorted(p.name for p in (tmp_path / "files").iterdir()) == ["0_gw.npz", "1_gw.npz", "parameters.csv"]
+    assert sorted(p.name for p in (tmp_path / "files").iterdir()) == [
+        "0_gw.npz",
+        "1_gw.npz",
+        "parameters.csv",
+    ]

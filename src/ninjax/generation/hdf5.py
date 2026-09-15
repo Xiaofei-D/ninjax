@@ -52,7 +52,9 @@ class SignalWriter:
             n_written = int(cast(Any, self._file.attrs["n_written"]))
             if n_written != self.n_events:
                 self._file.close()
-                raise RuntimeError(f"expected {self.n_events} events, wrote {n_written}")
+                raise RuntimeError(
+                    f"expected {self.n_events} events, wrote {n_written}"
+                )
 
             self._file.attrs["complete"] = True
             self._file.close()
@@ -67,7 +69,9 @@ class SignalWriter:
 
         expected_start = int(cast(Any, file.attrs["n_written"]))
         if start != expected_start:
-            raise ValueError(f"expected batch to start at {expected_start}, got {start}")
+            raise ValueError(
+                f"expected batch to start at {expected_start}, got {start}"
+            )
 
         if "parameters" not in file:
             self._create(batch[0])
@@ -76,19 +80,32 @@ class SignalWriter:
         first = batch[0]
 
         for name in first["parameters"]:
-            cast(h5py.Dataset,file[f"parameters/{name}"])[start:stop] = np.stack([np.asarray(record["parameters"][name]) for record in batch])
+            cast(h5py.Dataset, file[f"parameters/{name}"])[start:stop] = np.stack(
+                [np.asarray(record["parameters"][name]) for record in batch]
+            )
 
         for name, value in first.get("gw", {}).items():
             if isinstance(value, Mapping):
                 for field in value:
                     if field not in SHARED_STRAIN_FIELDS:
-                        cast(h5py.Dataset,file[f"gw/{name}/{field}"])[start:stop] = np.stack([np.asarray(record["gw"][name][field]) for record in batch])
+                        cast(h5py.Dataset, file[f"gw/{name}/{field}"])[start:stop] = (
+                            np.stack(
+                                [
+                                    np.asarray(record["gw"][name][field])
+                                    for record in batch
+                                ]
+                            )
+                        )
             else:
-                cast(h5py.Dataset,file[f"gw/{name}"])[start:stop] = np.stack([np.asarray(record["gw"][name]) for record in batch])
+                cast(h5py.Dataset, file[f"gw/{name}"])[start:stop] = np.stack(
+                    [np.asarray(record["gw"][name]) for record in batch]
+                )
 
         for filt, curve in first.get("em", {}).items():
             for field in curve:
-                cast(h5py.Dataset,file[f"em/{filt}/{field}"])[start:stop] = np.stack([np.asarray(record["em"][filt][field]) for record in batch])
+                cast(h5py.Dataset, file[f"em/{filt}/{field}"])[start:stop] = np.stack(
+                    [np.asarray(record["em"][filt][field]) for record in batch]
+                )
 
         file.attrs["n_written"] = stop
         file.flush()
@@ -121,11 +138,17 @@ class SignalWriter:
                             file.create_dataset(f"gw/{name}/{field}", data=array)
 
                         else:
-                            file.create_dataset(f"gw/{name}/{field}", shape=(n, *array.shape), dtype=array.dtype)
+                            file.create_dataset(
+                                f"gw/{name}/{field}",
+                                shape=(n, *array.shape),
+                                dtype=array.dtype,
+                            )
 
                 else:
                     array = np.asarray(value)
-                    file.create_dataset(f"gw/{name}", shape=(n, *array.shape), dtype=array.dtype)
+                    file.create_dataset(
+                        f"gw/{name}", shape=(n, *array.shape), dtype=array.dtype
+                    )
 
         if "em" in record:
             for filt, curve in record["em"].items():
@@ -135,4 +158,6 @@ class SignalWriter:
 
                 for field, value in curve.items():
                     array = np.asarray(value)
-                    file.create_dataset(f"em/{filt}/{field}", shape=(n, *array.shape), dtype=array.dtype)
+                    file.create_dataset(
+                        f"em/{filt}/{field}", shape=(n, *array.shape), dtype=array.dtype
+                    )
