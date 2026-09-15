@@ -74,9 +74,14 @@ def em_lightcurve(
     if error_budget is None:
         return {filt: {"time": times, "mag": mag} for filt, mag in mags.items()}
 
-    return _add_noise(times, mags, 
+    return _add_noise(
+        times,
+        mags,
         jax.random.key(0) if rng_key is None else rng_key,
-        error_budget=error_budget, detection_limit=detection_limit)
+        error_budget=error_budget,
+        detection_limit=detection_limit,
+    )
+
 
 def em_lightcurve_batch(
     params: Sequence[Mapping[str, Any]],
@@ -98,8 +103,12 @@ def em_lightcurve_batch(
     for index in range(len(params)):
         event_mags = {filt: mag[index] for filt, mag in mags.items()}
         if error_budget is None:
-            lightcurves.append({filt: {"time": times[index], "mag": mag}
-                                for filt, mag in event_mags.items()})
+            lightcurves.append(
+                {
+                    filt: {"time": times[index], "mag": mag}
+                    for filt, mag in event_mags.items()
+                }
+            )
         else:
             lightcurves.append(
                 _add_noise(

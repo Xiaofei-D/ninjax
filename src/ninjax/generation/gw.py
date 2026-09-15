@@ -46,7 +46,7 @@ def _detector_instances(names: Sequence[str]) -> list[GroundBased2G]:
 
 
 class _CompiledWaveform:
-    """JIT-compiled scalar and batched waveform evaluation, 
+    """JIT-compiled scalar and batched waveform evaluation,
     reused across events with the same ``f_ref``."""
 
     def __init__(self, f_ref: float) -> None:
@@ -65,6 +65,7 @@ class _CompiledWaveform:
     ) -> dict[str, Array]:
         """Evaluate one shared grid against a batch of parameter sets."""
         return self._batched(frequencies, dict(params))
+
 
 @cache
 def _waveform(f_ref: float) -> _CompiledWaveform:
@@ -90,6 +91,7 @@ def _detectors_with_psd(
         for ifo in instances
     )
     return instances, psds
+
 
 def gw_polarizations(
     params: Mapping[str, Any],

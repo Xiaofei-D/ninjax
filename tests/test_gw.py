@@ -35,7 +35,10 @@ def test_compiled_waveform_matches_eager():
 
     assert compiled.keys() == eager.keys()
     for polarization in eager:
-        np.testing.assert_allclose(compiled[polarization], eager[polarization], rtol=1e-10, atol=0.0)
+        np.testing.assert_allclose(
+            compiled[polarization], eager[polarization], rtol=1e-10, atol=0.0
+        )
+
 
 def test_batched_polarizations_match_scalar_calls():
     events = 3
@@ -45,8 +48,10 @@ def test_batched_polarizations_match_scalar_calls():
         "iota": [0.2, 0.4, 0.6],
         "lambda_1": [380.0, 400.0, 420.0],
     }
-    batch = {name: jnp.array(varied.get(name, [value] * events))
-        for name, value in PARAMS.items()}
+    batch = {
+        name: jnp.array(varied.get(name, [value] * events))
+        for name, value in PARAMS.items()
+    }
 
     batched = gw_polarizations_batch(batch, FREQUENCIES, f_ref=F_REF)
 
@@ -66,6 +71,7 @@ def test_batched_polarizations_match_scalar_calls():
                 rtol=1e-10,
                 atol=0.0,
             )
+
 
 @pytest.fixture
 def asd_file(tmp_path):
