@@ -164,6 +164,16 @@ class GenerateConfig(BaseConfig):
         default=0.15,
         description="Fraction of the remnant disk that becomes wind ejecta.",
     )
+    batch_size: int | None = Field(
+        default=None,
+        description="Number of binaries to generate before writing them out and "
+        "moving on. Default to process the whole population in one batch.",
+    )
+    output_format: Literal["files", "hdf5"] = Field(
+        default="files",
+        description="files: parameters.csv plus one .npz/.dat per binary. "
+        "hdf5: a single signals.h5 with generated signals written batch by batch.",
+    )
     gw: GWConfig = Field(
         default_factory=lambda: GWConfig(), description="Gravitational-wave output."
     )
@@ -175,6 +185,10 @@ class GenerateConfig(BaseConfig):
     def _check_inputs(self) -> GenerateConfig:
         if (self.params_file is None) == (self.prior_file is None):
             raise ValueError("set exactly one of --params-file or --prior-file")
+        if self.batch_size is not None and self.batch_size < 1:
+            raise ValueError(f"batch-size must be at least 1, got {self.batch_size}")
+        if self.output_format == "hdf5" and self.batch_size is None:
+            raise ValueError("batch-size is required with --output-format hdf5")
         for path in (self.eos, self.params_file, self.prior_file, self.fixed_params):
             if path is not None and not path.exists():
                 raise ValueError(f"file not found: {path}")
@@ -305,7 +319,7 @@ def main() -> None:
     import jax
     import jax.numpy as jnp
 
-    from ninjax.generation import generate_signals
+    from ninjax.generation import generate_signals, generate_signals_hdf5
 
     table = build_table(config)
 
@@ -319,21 +333,28 @@ def main() -> None:
         frequencies = jnp.arange(config.gw.f_min, config.gw.f_max, config.gw.delta_f)
 
     eos = config.eos
+    eos_spec = load_mapping(eos) if eos.suffix in (".json", ".toml") else eos
+    options: dict[str, Any] = {
+        "rng_key": jax.random.key(config.seed),
+        "gw_mode": config.gw.mode,
+        "frequencies": frequencies,
+        "gw_kwargs": gw_kwargs(config.gw),
+        "em_model": em_model,
+        "error_budget": config.em.error_budget,
+        "detection_limit": config.em.detection_limit,
+        "alpha": config.alpha,
+        "ratio_zeta": config.ratio_zeta,
+        "batch_size": config.batch_size,
+    }
     config.outdir.mkdir(parents=True, exist_ok=True)
-    records = generate_signals(
-        table,
-        load_mapping(eos) if eos.suffix in (".json", ".toml") else eos,
-        rng_key=jax.random.key(config.seed),
-        gw_mode=config.gw.mode,
-        frequencies=frequencies,
-        gw_kwargs=gw_kwargs(config.gw),
-        em_model=em_model,
-        error_budget=config.em.error_budget,
-        detection_limit=config.em.detection_limit,
-        alpha=config.alpha,
-        ratio_zeta=config.ratio_zeta,
-        outdir=config.outdir,
-    )
 
+    if config.output_format == "hdf5":
+        path = generate_signals_hdf5(
+            table, eos_spec, config.outdir / "signals.h5", **options
+        )
+        print(f"Wrote {len(table)} injection(s) to {path}")
+        return
+
+    records = generate_signals(table, eos_spec, outdir=config.outdir, **options)
     write_parameters(records, config.outdir)
     print(f"Wrote {len(records)} injection(s) to {config.outdir}")
