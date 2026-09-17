@@ -71,6 +71,39 @@ def test_writer_stores_em_output(tmp_path):
         np.testing.assert_array_equal(file["em/ztfg/mag"][0], [20.0, 21.0])
 
 
+def test_writer_stores_strain_output(tmp_path):
+    """Strain records share the frequency grid and PSD but stack everything else."""
+    path = tmp_path / "signals.h5"
+    frequencies = np.arange(4.0)
+
+    def record(index):
+        return {
+            "parameters": {"mass_1": 1.4 + index},
+            "gw": {
+                "H1": {
+                    "frequencies": frequencies,
+                    "psd": np.ones(4),
+                    "strain": frequencies + index,
+                    "optimal_snr": np.float64(10.0 + index),
+                    "match_filtered_snr": np.complex128(9.0 + index),
+                }
+            },
+        }
+
+    with SignalWriter(path, 2) as writer:
+        writer.write(0, [record(0)])
+        writer.write(1, [record(1)])
+
+    with h5py.File(path) as file:
+        np.testing.assert_array_equal(file["gw/H1/frequencies"][()], frequencies)
+        np.testing.assert_array_equal(file["gw/H1/psd"][()], np.ones(4))
+        assert file["gw/H1/strain"].shape == (2, 4)
+        np.testing.assert_array_equal(file["gw/H1/strain"][1], frequencies + 1)
+        assert file["gw/H1/optimal_snr"].shape == (2,)
+        assert file["gw/H1/match_filtered_snr"].shape == (2,)
+        np.testing.assert_array_equal(file["gw/H1/optimal_snr"][()], [10.0, 11.0])
+
+
 def test_failed_run_leaves_partial_file(tmp_path):
     final = tmp_path / "signals.h5"
     partial = tmp_path / "signals.partial.h5"

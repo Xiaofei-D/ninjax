@@ -187,6 +187,8 @@ class GenerateConfig(BaseConfig):
             raise ValueError("set exactly one of --params-file or --prior-file")
         if self.batch_size is not None and self.batch_size < 1:
             raise ValueError(f"batch-size must be at least 1, got {self.batch_size}")
+        if self.output_format == "hdf5" and self.batch_size is None:
+            raise ValueError("batch-size is required with --output-format hdf5")
         for path in (self.eos, self.params_file, self.prior_file, self.fixed_params):
             if path is not None and not path.exists():
                 raise ValueError(f"file not found: {path}")
@@ -329,9 +331,6 @@ def main() -> None:
     frequencies = None
     if config.gw.mode == "polarizations":
         frequencies = jnp.arange(config.gw.f_min, config.gw.f_max, config.gw.delta_f)
-
-    if config.output_format == "hdf5" and config.batch_size is None:
-        raise ValueError("batch_size must be specified for HDF5 output")
 
     eos = config.eos
     eos_spec = load_mapping(eos) if eos.suffix in (".json", ".toml") else eos

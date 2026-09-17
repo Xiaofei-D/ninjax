@@ -93,13 +93,11 @@ def _flatten(obj: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
     return flat
 
 
-def _write_record(
-    outdir: Path, index: int, record: Mapping[str, Any], params: Mapping[str, Any]
-) -> None:
+def _write_record(outdir: Path, index: int, record: Mapping[str, Any]) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
 
     if record.get("em"):
-        mjd = Time(float(params["geocent_time"]), format="gps").mjd
+        mjd = Time(float(record["parameters"]["geocent_time"]), format="gps").mjd
         data = {
             filt: np.column_stack(
                 [
@@ -221,6 +219,7 @@ def _generate_batches(
                     [to_jim_params(record["parameters"]) for record in batch]
                 ),
                 frequencies,
+                f_ref=gw_opts.get("f_ref", 20.0),
             )
             for index, record in enumerate(batch):
                 record["gw"] = {
@@ -289,9 +288,7 @@ def generate_signals(
     ):
         for offset, record in enumerate(batch):
             if outdir is not None:
-                _write_record(
-                    Path(outdir), start + offset, record, record["parameters"]
-                )
+                _write_record(Path(outdir), start + offset, record)
             records.append(record)
 
     return records

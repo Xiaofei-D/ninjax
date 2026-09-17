@@ -75,6 +75,19 @@ def test_batched_lightcurves_match_scalar(fake_em_model):
                 np.testing.assert_array_equal(one[filt][field], scalar[filt][field])
 
 
+def test_default_keys_differ_between_events(fake_em_model):
+    """Without supplied keys each event must still draw its own noise."""
+    params = [event_params(0)] * 3
+
+    batched = em_lightcurve_batch(
+        params, fake_em_model, error_budget=ERROR_BUDGET, rng_key=None
+    )
+
+    first = batched[0]["ztfg"]["mag"]
+    for other in batched[1:]:
+        assert not np.array_equal(other["ztfg"]["mag"], first)
+
+
 def test_batch_size_preserves_em_realisation(table, eos_file, fake_em_model):
     def run(batch_size):
         return generate_signals(

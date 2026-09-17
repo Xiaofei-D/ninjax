@@ -97,6 +97,7 @@ def em_lightcurve_batch(
     uses its own RNG key so the result is independent of batch split.
     """
     times, mags = model.vpredict(_surrogate_inputs(params, model))
+    base_key = jax.random.key(0)
 
     # Preserve Fiesta's filter order so noise uses the same per-filter subkeys
     lightcurves = []
@@ -110,11 +111,16 @@ def em_lightcurve_batch(
                 }
             )
         else:
+            key = (
+                rng_key[index]
+                if rng_key is not None
+                else jax.random.fold_in(base_key, index)
+            )
             lightcurves.append(
                 _add_noise(
                     times[index],
                     event_mags,
-                    jax.random.key(0) if rng_key is None else rng_key[index],
+                    key,
                     error_budget=error_budget,
                     detection_limit=detection_limit,
                 )

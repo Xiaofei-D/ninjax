@@ -174,7 +174,10 @@ injections/
 ```
 
 For large populations, pass `--output-format hdf5` to write all outputs to a
-single `signals.h5`. `--batch-size` is required for this mode. Batches are written and released one at a time to avoid retaining the full set of generated signals in memory. Incomplete runs leave `signals.partial.h5` instead of the final file.
+single `signals.h5`. `--batch-size` is required for this mode. Batches are
+written and released one at a time to avoid retaining the full set of generated
+signals in memory. Incomplete runs leave `signals.partial.h5` instead of the
+final file.
 
 Run `ninjax-generate --help` for the full list of options.
 
